@@ -1,16 +1,28 @@
 import crypto                   from "crypto";
+import fs                       from "fs";
+import path                     from "path";
 import { google }               from "googleapis";
 import { NextRequest, NextResponse } from "next/server";
 
 /* ── Google Sheets helper ──────────────────────────────────── */
 async function appendToSheet(row: string[]) {
-  const auth = new google.auth.GoogleAuth({
-    credentials: {
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key:  (process.env.GOOGLE_PRIVATE_KEY ?? "").replace(/\\n/g, "\n"),
-    },
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-  });
+  const serviceAccountPath = path.join(process.cwd(), "service-account.json");
+  
+  let auth;
+  if (fs.existsSync(serviceAccountPath)) {
+    auth = new google.auth.GoogleAuth({
+      keyFile: serviceAccountPath,
+      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+    });
+  } else {
+    auth = new google.auth.GoogleAuth({
+      credentials: {
+        client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        private_key:  (process.env.GOOGLE_PRIVATE_KEY ?? "").replace(/\\n/g, "\n"),
+      },
+      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+    });
+  }
 
   const sheets = google.sheets({ version: "v4", auth });
 
