@@ -1,31 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 import * as THREE from "three";
-import Script from "next/script";
-
-/* ─── Types ─────────────────────────────────────────────────── */
-interface FormData {
-  name:         string;
-  email:        string;
-  contact:      string;
-  registeredBy: string;
-}
-
-type PaymentStatus = "idle" | "creating" | "paying" | "verifying" | "success" | "failed";
-
-interface RazorpayResponse {
-  razorpay_order_id:   string;
-  razorpay_payment_id: string;
-  razorpay_signature:  string;
-}
-
-declare global {
-  interface Window {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    Razorpay: new (options: Record<string, any>) => { open(): void };
-  }
-}
+import Link from "next/link";
 
 /* ─── Static data ────────────────────────────────────────────── */
 const EVENTS = [
@@ -41,6 +18,8 @@ const CONTACTS = [
   { icon: "fas fa-phone-alt", iconColor: "#f59e0b", name: "Arjun Sakha Das",             phone: "9999033827" },
   { icon: "fas fa-phone-alt", iconColor: "#f59e0b", name: "Anandita Radhika Devi Dasi",  phone: "7291028784" },
 ];
+
+const PAYMENT_PAGE_URL = "https://rzp.io/rzp/yh6f15yq";
 
 /* ─── Three.js background hook ──────────────────────────────── */
 function useThreeBackground() {
@@ -160,122 +139,12 @@ function useThreeBackground() {
   }, []);
 }
 
-/* ─── Payment status label helper ───────────────────────────── */
-function btnLabel(status: PaymentStatus) {
-  switch (status) {
-    case "creating":   return "Creating order…";
-    case "paying":     return "Opening payment…";
-    case "verifying":  return "Verifying payment…";
-    default:           return "Pay ₹200 & Register";
-  }
-}
-
 /* ─── Main page component ────────────────────────────────────── */
 export default function Home() {
   useThreeBackground();
 
-  const [form, setForm] = useState<FormData>({ name: "", email: "", contact: "", registeredBy: "" });
-  const [errors,  setErrors]  = useState<Partial<FormData>>({});
-  const [status,  setStatus]  = useState<PaymentStatus>("idle");
-  const [paymentId, setPaymentId] = useState<string>("");
-  const [apiError,  setApiError]  = useState<string>("");
-
-  const isBusy = ["creating", "paying", "verifying"].includes(status);
-
-  /* ── Validation ── */
-  const validate = (): boolean => {
-    const e: Partial<FormData> = {};
-    if (!form.name.trim())    e.name    = "Full name is required";
-    if (!form.email.trim() || !/\S+@\S+\.\S+/.test(form.email))
-                              e.email   = "Enter a valid email address";
-    if (!form.contact.trim() || !/^\d{10}$/.test(form.contact))
-                              e.contact = "Enter a valid 10-digit mobile number";
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  };
-
-  /* ── Payment flow ── */
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!validate()) return;
-    setApiError("");
-
-    try {
-      /* 1. Create Razorpay order */
-      setStatus("creating");
-      const orderRes = await fetch("/api/create-order", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify(form),
-      });
-      const orderData = await orderRes.json();
-      if (!orderRes.ok) throw new Error(orderData.error ?? "Order creation failed");
-
-      /* 2. Open Razorpay checkout */
-      setStatus("paying");
-      await new Promise<void>((resolve, reject) => {
-        const rzp = new window.Razorpay({
-          key:         process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
-          amount:      orderData.amount,
-          currency:    orderData.currency,
-          name:        "Ananda Utsav 2026",
-          description: "Registration – Formula for the Happy Family",
-          order_id:    orderData.orderId,
-          image:       "https://upload.wikimedia.org/wikipedia/commons/6/6f/ISKCON_Logo.png",
-          prefill: {
-            name:    form.name,
-            email:   form.email,
-            contact: form.contact,
-          },
-          theme: { color: "#ea580c" },
-
-          handler: async (response: RazorpayResponse) => {
-            try {
-              /* 3. Verify & save to Google Sheets */
-              setStatus("verifying");
-              const verifyRes = await fetch("/api/verify-payment", {
-                method:  "POST",
-                headers: { "Content-Type": "application/json" },
-                body:    JSON.stringify({ ...response, ...form }),
-              });
-              const verifyData = await verifyRes.json();
-              if (!verifyRes.ok) throw new Error(verifyData.error ?? "Verification failed");
-
-              setPaymentId(verifyData.paymentId);
-              setStatus("success");
-              setForm({ name: "", email: "", contact: "", registeredBy: "" });
-              resolve();
-            } catch (err) {
-              reject(err);
-            }
-          },
-
-          modal: {
-            ondismiss: () => {
-              setStatus("idle");
-              resolve(); // user closed modal voluntarily
-            },
-          },
-        });
-        rzp.open();
-      });
-    } catch (err: unknown) {
-      setStatus("failed");
-      setApiError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
-    }
-  };
-
-  const handleChange = (key: keyof FormData) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm(f => ({ ...f, [key]: e.target.value }));
-    if (errors[key]) setErrors(ev => ({ ...ev, [key]: undefined }));
-  };
-
-  /* ─── Render ─────────────────────────────────────────────── */
   return (
     <>
-      {/* Razorpay SDK — loaded once, globally */}
-      <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="beforeInteractive" />
-
       <div style={{ position: "relative", minHeight: "100vh", overflowX: "hidden" }}>
         {/* WebGL canvas */}
         <canvas id="bg-canvas" />
@@ -319,6 +188,38 @@ export default function Home() {
                   </div>
                 </div>
               ))}
+            </div>
+
+            <div style={{ marginTop: 28 }}>
+              <a
+                href={PAYMENT_PAGE_URL}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "14px 34px",
+                  borderRadius: 999,
+                  background: "linear-gradient(135deg, #ea580c 0%, #b91c1c 100%)",
+                  color: "white",
+                  fontWeight: 700,
+                  fontSize: "1.05rem",
+                  boxShadow: "0 6px 24px rgba(234, 88, 12, 0.4)",
+                  textDecoration: "none",
+                  transition: "transform 0.2s, box-shadow 0.2s",
+                }}
+                onMouseEnter={e => {
+                  (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)";
+                  (e.currentTarget as HTMLElement).style.boxShadow = "0 10px 30px rgba(234, 88, 12, 0.55)";
+                }}
+                onMouseLeave={e => {
+                  (e.currentTarget as HTMLElement).style.transform = "none";
+                  (e.currentTarget as HTMLElement).style.boxShadow = "0 6px 24px rgba(234, 88, 12, 0.4)";
+                }}
+              >
+                <i className="fas fa-ticket-alt" />
+                <span>Register Now &bull; ₹200</span>
+                <i className="fas fa-arrow-right" />
+              </a>
             </div>
           </header>
 
@@ -372,8 +273,8 @@ export default function Home() {
             </div>
           </section>
 
-          {/* ══ REGISTRATION FORM ══ */}
-          <section className="anim-4" style={{ marginTop: 56 }}>
+          {/* ══ REGISTRATION / PAYMENT ══ */}
+          <section id="register" className="anim-4" style={{ marginTop: 56 }}>
             <div style={{ borderRadius: 24, overflow: "hidden", boxShadow: "0 24px 80px rgba(0,0,0,0.45)" }}>
 
               {/* Price banner */}
@@ -385,105 +286,87 @@ export default function Home() {
                   <span style={{ fontSize: "1.1rem", fontWeight: 700 }}>₹</span>
                   <span style={{ fontSize: "3.2rem", fontWeight: 900, lineHeight: 1 }}>200</span>
                 </div>
-                <p style={{ fontSize: "0.75rem", opacity: 0.75 }}>Includes entry to all events and dinner</p>
+                <p style={{ fontSize: "0.75rem", opacity: 0.75 }}>Includes entry to all events and delicious dinner prasadam</p>
               </div>
 
-              {/* Form body */}
-              <div style={{ background: "white", padding: "clamp(22px,5vw,40px)" }}>
-                <h3 className="font-cinzel" style={{ fontSize: "clamp(1rem,4vw,1.35rem)", fontWeight: 700, color: "#0b1930", marginBottom: 22, paddingBottom: 14, borderBottom: "2px solid #f3f4f6" }}>
-                  Registration Form
+              {/* Action body */}
+              <div style={{ background: "white", padding: "clamp(24px,5vw,40px)", textAlign: "center" }}>
+                <h3 className="font-cinzel" style={{ fontSize: "clamp(1.05rem,4vw,1.4rem)", fontWeight: 700, color: "#0b1930", marginBottom: 20 }}>
+                  Join Ananda Utsav 2026
                 </h3>
 
-                {/* ── Success state ── */}
-                {status === "success" && (
-                  <div style={{ background: "#f0fdf4", border: "1.5px solid #86efac", borderRadius: 14, padding: "20px", marginBottom: 22, textAlign: "center" }}>
-                    <div style={{ fontSize: 52, marginBottom: 10 }}>🎉</div>
-                    <h4 style={{ fontWeight: 700, color: "#15803d", fontSize: "1.1rem", marginBottom: 6 }}>Registration Successful!</h4>
-                    <p style={{ fontSize: "0.875rem", color: "#166534", marginBottom: 8 }}>
-                      Welcome to Ananda Utsav 2026! We look forward to celebrating with you.
-                    </p>
-                    <p style={{ fontSize: "0.78rem", color: "#4ade80", fontFamily: "monospace" }}>
-                      Payment ID: {paymentId}
-                    </p>
-                    <button onClick={() => setStatus("idle")} style={{ marginTop: 14, padding: "8px 22px", borderRadius: 8, border: "1.5px solid #22c55e", background: "transparent", color: "#15803d", cursor: "pointer", fontWeight: 600, fontSize: "0.875rem" }}>
-                      Register Another Person
-                    </button>
+                {/* What's included */}
+                <div style={{ background: "#fff7ed", borderRadius: 14, padding: "18px 20px", border: "1px solid #fed7aa", marginBottom: 26, textAlign: "left" }}>
+                  <p style={{ fontSize: "0.875rem", fontWeight: 700, color: "#9a3412", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                    <i className="fas fa-star" style={{ color: "#ea580c" }} />
+                    Your registration includes:
+                  </p>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10 }}>
+                    {EVENTS.map((ev, i) => (
+                      <div key={i} style={{ fontSize: "0.825rem", color: "#c2410c", display: "flex", alignItems: "center", gap: 8 }}>
+                        <i className="fas fa-check-circle" style={{ color: "#ea580c", flexShrink: 0 }} />
+                        <span>{ev.label}</span>
+                      </div>
+                    ))}
                   </div>
-                )}
+                </div>
 
-                {/* ── Error banner ── */}
-                {(status === "failed" || apiError) && (
-                  <div style={{ background: "#fef2f2", border: "1.5px solid #fca5a5", borderRadius: 12, padding: "14px 18px", marginBottom: 20, display: "flex", gap: 10, alignItems: "flex-start" }}>
-                    <i className="fas fa-exclamation-triangle" style={{ color: "#ef4444", marginTop: 2, flexShrink: 0 }} />
-                    <div>
-                      <p style={{ fontWeight: 700, color: "#991b1b", marginBottom: 2, fontSize: "0.9rem" }}>Payment Failed</p>
-                      <p style={{ fontSize: "0.825rem", color: "#b91c1c" }}>{apiError || "Payment was not completed. Please try again."}</p>
-                    </div>
-                    <button onClick={() => { setStatus("idle"); setApiError(""); }} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "#ef4444", flexShrink: 0 }}>
-                      <i className="fas fa-times" />
-                    </button>
-                  </div>
-                )}
+                {/* Redirect Register Button */}
+                <div style={{ maxWidth: 440, margin: "0 auto" }}>
+                  <a
+                    href={PAYMENT_PAGE_URL}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 12,
+                      width: "100%",
+                      padding: "16px 24px",
+                      borderRadius: 14,
+                      background: "linear-gradient(135deg, #ea580c 0%, #b91c1c 100%)",
+                      color: "white",
+                      fontWeight: 700,
+                      fontSize: "1.05rem",
+                      boxShadow: "0 6px 24px rgba(234, 88, 12, 0.35)",
+                      textDecoration: "none",
+                      transition: "opacity 0.2s, transform 0.15s, box-shadow 0.2s",
+                      cursor: "pointer",
+                    }}
+                    onMouseEnter={e => {
+                      (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)";
+                      (e.currentTarget as HTMLElement).style.boxShadow = "0 10px 28px rgba(234, 88, 12, 0.45)";
+                    }}
+                    onMouseLeave={e => {
+                      (e.currentTarget as HTMLElement).style.transform = "none";
+                      (e.currentTarget as HTMLElement).style.boxShadow = "0 6px 24px rgba(234, 88, 12, 0.35)";
+                    }}
+                  >
+                    <i className="fas fa-ticket-alt" />
+                    <span>Register Now &bull; ₹200</span>
+                    <i className="fas fa-arrow-right" />
+                  </a>
 
-                {/* ── Form ── */}
-                {status !== "success" && (
-                  <form onSubmit={handleSubmit} noValidate style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-                    <FormField id="name"         label="Full Name"       icon="far fa-user"         type="text"  placeholder="Enter your full name"              value={form.name}         error={errors.name}    onChange={handleChange("name")}         required />
-                    <FormField id="email"        label="Email Address"   icon="far fa-envelope"    type="email" placeholder="you@example.com"                   value={form.email}        error={errors.email}   onChange={handleChange("email")}        required />
-                    <FormField id="contact"      label="Contact Number"  icon="fas fa-phone-alt"   type="tel"   placeholder="10-digit mobile number"            value={form.contact}      error={errors.contact} onChange={handleChange("contact")}      required />
-                    <FormField id="registeredBy" label="Registered By"   icon="fas fa-hands-helping" type="text" placeholder="Name of the person who referred you" value={form.registeredBy}               onChange={handleChange("registeredBy")} optional />
+                  <p style={{ marginTop: 14, fontSize: "0.75rem", color: "#6b7280", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                    <i className="fas fa-shield-alt" style={{ color: "#16a34a" }} />
+                    Secured by Razorpay · 256-bit SSL encryption
+                  </p>
 
-                    {/* What's included */}
-                    <div style={{ background: "#fff7ed", borderRadius: 10, padding: "12px 16px", border: "1px solid #fed7aa" }}>
-                      <p style={{ fontSize: "0.8rem", fontWeight: 600, color: "#9a3412", marginBottom: 6 }}>
-                        <i className="fas fa-star" style={{ marginRight: 6 }} />Your ticket includes:
-                      </p>
-                      <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 4 }}>
-                        {EVENTS.map((ev, i) => (
-                          <li key={i} style={{ fontSize: "0.78rem", color: "#c2410c", display: "flex", alignItems: "center", gap: 8 }}>
-                            <i className="fas fa-check-circle" style={{ color: "#ea580c" }} /> {ev.label}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
+                  <p style={{ marginTop: 8, fontSize: "0.72rem", color: "#9ca3af" }}>
+                    Clicking Register will redirect you to the official Razorpay payment page to complete your booking.
+                  </p>
 
-                    {/* Razorpay pay button */}
-                    <button
-                      type="submit"
-                      disabled={isBusy}
-                      style={{
-                        marginTop:      6,
-                        width:          "100%",
-                        padding:        "15px 24px",
-                        borderRadius:   12,
-                        border:         "none",
-                        background:     isBusy
-                          ? "linear-gradient(135deg,#6b7280,#4b5563)"
-                          : "linear-gradient(135deg,#ea580c 0%,#b91c1c 100%)",
-                        color:          "white",
-                        fontWeight:     700,
-                        fontSize:       "1rem",
-                        cursor:         isBusy ? "not-allowed" : "pointer",
-                        display:        "flex",
-                        alignItems:     "center",
-                        justifyContent: "center",
-                        gap:            10,
-                        boxShadow:      isBusy ? "none" : "0 6px 24px rgba(234,88,12,0.35)",
-                        transition:     "opacity 0.2s,transform 0.15s",
-                      }}
-                    >
-                      {isBusy
-                        ? <><i className="fas fa-spinner fa-spin" /> {btnLabel(status)}</>
-                        : <><i className="fas fa-lock" /> {btnLabel(status)} <i className="fas fa-arrow-right" /></>
-                      }
-                    </button>
-
-                    <p style={{ textAlign: "center", fontSize: "0.73rem", color: "#9ca3af", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                      <i className="fas fa-shield-alt" style={{ color: "#6b7280" }} />
-                      Secured by Razorpay · 256-bit SSL encryption
-                    </p>
-                  </form>
-                )}
+                  <p style={{ marginTop: 8, fontSize: "0.72rem", color: "#6b7280" }}>
+                    By continuing, you agree to our{" "}
+                    <Link href="/terms-and-conditions" style={{ color: "#ea580c", textDecoration: "underline" }}>
+                      Terms &amp; Conditions
+                    </Link>{" "}
+                    and{" "}
+                    <Link href="/privacy-policy" style={{ color: "#ea580c", textDecoration: "underline" }}>
+                      Privacy Policy
+                    </Link>
+                    .
+                  </p>
+                </div>
               </div>
             </div>
           </section>
@@ -508,59 +391,45 @@ export default function Home() {
               ))}
             </div>
 
-            <p style={{ marginTop: 36, fontSize: "0.78rem", color: "rgba(255,255,255,0.3)" }}>
+            {/* ── Policy & Legal Links ── */}
+            <div style={{ marginTop: 32, display: "flex", justifyContent: "center", alignItems: "center", gap: 18, flexWrap: "wrap", fontSize: "0.85rem" }}>
+              <Link
+                href="/privacy-policy"
+                style={{
+                  color: "#fde68a",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 7,
+                  transition: "opacity 0.2s",
+                }}
+              >
+                <i className="fas fa-shield-alt" style={{ fontSize: 13, color: "#f59e0b" }} />
+                <span>Privacy Policy</span>
+              </Link>
+
+              <span style={{ color: "rgba(245,158,11,0.4)" }}>•</span>
+
+              <Link
+                href="/terms-and-conditions"
+                style={{
+                  color: "#fde68a",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 7,
+                  transition: "opacity 0.2s",
+                }}
+              >
+                <i className="fas fa-file-contract" style={{ fontSize: 13, color: "#f59e0b" }} />
+                <span>Terms and Conditions</span>
+              </Link>
+            </div>
+
+            <p style={{ marginTop: 22, fontSize: "0.78rem", color: "rgba(255,255,255,0.3)" }}>
               © 2026 Ananda Utsav · ISKCON · All rights reserved.
             </p>
           </footer>
         </main>
       </div>
     </>
-  );
-}
-
-/* ─── FormField sub-component ────────────────────────────────── */
-interface FieldProps {
-  id:          string;
-  label:       string;
-  icon:        string;
-  type:        string;
-  placeholder: string;
-  value:       string;
-  onChange:    (e: React.ChangeEvent<HTMLInputElement>) => void;
-  required?:   boolean;
-  optional?:   boolean;
-  error?:      string;
-}
-
-function FormField({ id, label, icon, type, placeholder, value, onChange, required, optional, error }: FieldProps) {
-  const [focused, setFocused] = useState(false);
-  return (
-    <div>
-      <label htmlFor={id} style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, color: "#374151", marginBottom: 6 }}>
-        {label}{" "}
-        {required && <span style={{ color: "#ef4444" }}>*</span>}
-        {optional && <span style={{ color: "#9ca3af", fontWeight: 400, fontSize: "0.78rem" }}> (Optional)</span>}
-      </label>
-      <div style={{ position: "relative" }}>
-        <i className={icon} style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: error ? "#ef4444" : focused ? "#ea580c" : "#9ca3af", fontSize: 15, transition: "color 0.2s", pointerEvents: "none" }} />
-        <input
-          id={id} type={type} placeholder={placeholder} value={value}
-          onChange={onChange}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          required={required}
-          className="form-input"
-          style={{
-            border:    error ? "1.5px solid #ef4444" : focused ? "1.5px solid #ea580c" : "1.5px solid #d1d5db",
-            boxShadow: focused ? "0 0 0 3px rgba(234,88,12,0.15)" : error ? "0 0 0 3px rgba(239,68,68,0.1)" : "none",
-          }}
-        />
-      </div>
-      {error && (
-        <p style={{ marginTop: 5, fontSize: "0.78rem", color: "#ef4444", display: "flex", alignItems: "center", gap: 5 }}>
-          <i className="fas fa-exclamation-circle" /> {error}
-        </p>
-      )}
-    </div>
   );
 }

@@ -1,9 +1,24 @@
-<!-- BEGIN:nextjs-agent-rules -->
+# AGENTS.md
 
-## This is NOT the Next.js you know
+## Commands
+- `npm run dev` - Start dev server (Next.js)
+- `npm run build` - Production build
+- `npm run start` - Start production server
+- `npm run lint` - ESLint (flat config, uses `eslint-config-next`)
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+## Stack / Quirks
+- **Next.js 16.4.2**, React 19.3.0, TypeScript strict, Tailwind CSS v4 (PostCSS via `@tailwindcss/postcss`)
+- App Router under `src/app/`; path alias `@/*` -> `./src/*`
+- `next.config.ts` enables `cacheComponents: true` and `partialPrefetching: true` (non-default; verify behavior if touching caching)
+- ESLint flat config (`eslint.config.mjs`) extends `next/core-web-vitals` + `next/typescript`, ignores `.next/`, `out/`, `build/`, `next-env.d.ts`
 
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+## Structure
+- `src/app/layout.tsx`, `src/app/page.tsx` - app shell/root page
+- `src/app/api/` - API routes (Route Handlers)
+- `src/app/globals.css` - global styles
+- Integrations present: `googleapis`, `razorpay`, `three` (+ `@types/three`) - expect related routes/utilities under `src/app/api/` or feature code under `src/`
 
-<!-- END:nextjs-agent-rules -->
+## Notes
+- Node types `@types/node@^20`; use `@/*` imports consistently
+- When editing, follow Next.js App Router conventions (Server/Client Components) - no repo-specific lint rules override defaults beyond the flat config above
+- Build artifacts in `.next/` (gitignored implicitly by typical Next ignores; not listed but standard)
